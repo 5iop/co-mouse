@@ -1,0 +1,85 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual Environment
+venv/
+env/
+ENV/
+.venv/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+*.ipynb
+
+# Dataset (Large files)
+boun-mouse-dynamics-dataset/
+boun-mouse-dynamics-dataset-cleaned/
+downloads/
+*.zip
+*.z01
+*.z02
+*.z03
+*.z04
+*.z05
+*.z06
+*.z07
+*.z08
+*.z09
+
+# Training outputs
+checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# Generated outputs
+outputs/
+cache/
+runs/
+
+# Logs
+*.log
+training.log
+nohup.out
+
+# TensorBoard
+events.out.tfevents.*
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# OS specific
+Thumbs.db
+Desktop.ini
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Documentation builds
+docs/_build/
+site/

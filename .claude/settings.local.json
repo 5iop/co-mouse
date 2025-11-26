@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash($null)",
+      "Bash(python diagnose.py:*)",
+      "Bash(call venvScriptsactivate.bat)",
+      "Bash(venvScriptspython.exe diagnose.py)",
+      "Bash(./venv/Scripts/python.exe:*)",
+      "Bash(dir:*)",
+      "Bash(python:*)",
+      "Bash(venv/Scripts/python.exe:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
