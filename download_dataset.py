@@ -65,9 +65,86 @@ def extract_zip(zip_path, extract_to):
     print(f"✓ 解压完成: {zip_path}")
 
 
+def check_and_install_7z():
+    """
+    检查并提示安装 7z 工具
+
+    Returns:
+        zip_cmd: 7z 命令名称，如果未安装则返回 None
+    """
+    import platform
+
+    # 检查是否有 7z 工具
+    for cmd in ['7z', '7za', 'p7zip']:
+        try:
+            subprocess.run([cmd], capture_output=True, check=False)
+            print(f"✓ 检测到 7-Zip 工具: {cmd}")
+            return cmd
+        except FileNotFoundError:
+            continue
+
+    # 未检测到 7z
+    print("\n" + "="*70)
+    print("⚠ 未检测到 7-Zip 工具，需要安装才能解压数据集")
+    print("="*70)
+
+    system = platform.system()
+
+    if system == 'Linux':
+        print("\n在 Linux 系统上，请运行以下命令安装:")
+        print("-"*70)
+        print("sudo apt update && sudo apt install -y p7zip-full vim")
+        print("-"*70)
+        print("\n说明:")
+        print("  - p7zip-full: 7-Zip 解压工具（必需）")
+        print("  - vim: 文本编辑器（可选，但推荐安装）")
+        print("\n是否现在自动安装? (需要 sudo 权限)")
+
+        response = input("输入 'y' 自动安装，或 'n' 退出并手动安装: ")
+        if response.lower() == 'y':
+            try:
+                print("\n正在安装 p7zip-full 和 vim...")
+                subprocess.run(['sudo', 'apt', 'update'], check=True)
+                subprocess.run(['sudo', 'apt', 'install', '-y', 'p7zip-full', 'vim'], check=True)
+                print("\n✓ 安装完成!")
+
+                # 再次检查
+                for cmd in ['7z', '7za']:
+                    try:
+                        subprocess.run([cmd], capture_output=True, check=False)
+                        return cmd
+                    except FileNotFoundError:
+                        continue
+
+            except subprocess.CalledProcessError as e:
+                print(f"\n✗ 安装失败: {e}")
+                print("请手动运行上述命令进行安装")
+                return None
+        else:
+            print("\n请手动安装后重新运行此脚本")
+            return None
+
+    elif system == 'Darwin':  # macOS
+        print("\n在 macOS 系统上，请运行以下命令安装:")
+        print("-"*70)
+        print("brew install p7zip")
+        print("-"*70)
+        return None
+
+    elif system == 'Windows':
+        print("\n在 Windows 系统上，请访问以下链接下载并安装:")
+        print("-"*70)
+        print("https://www.7-zip.org/download.html")
+        print("-"*70)
+        print("安装后请将 7z.exe 所在目录添加到系统 PATH")
+        return None
+
+    return None
+
+
 def extract_multipart_zip(base_path, extract_to):
     """
-    解压分卷 ZIP 文件 (.zip, .z01, .z02, ...)
+    使用 7z 解压分卷 ZIP 文件 (.zip, .z01, .z02, ...)
 
     Args:
         base_path: 主 ZIP 文件路径（.zip）
@@ -75,67 +152,37 @@ def extract_multipart_zip(base_path, extract_to):
     """
     print(f"\n检测到分卷压缩文件: {base_path}")
 
-    # 检查是否有 7z 工具（尝试多个命令）
-    has_7z = False
-    zip_cmd = None
+    # 检查并安装 7z
+    zip_cmd = check_and_install_7z()
 
-    for cmd in ['7z', '7za', 'p7zip']:
-        try:
-            result = subprocess.run([cmd], capture_output=True, check=False)
-            has_7z = True
-            zip_cmd = cmd
-            print(f"✓ 检测到 7-Zip 工具: {cmd}")
-            break
-        except FileNotFoundError:
-            continue
-
-    if not has_7z:
-        print("⚠ 未检测到 7-Zip，尝试使用 Python 原生方法")
+    if not zip_cmd:
+        print("\n✗ 无法继续：需要 7-Zip 工具来解压分卷文件")
+        raise Exception("未安装 7-Zip 工具")
 
     extract_to.mkdir(parents=True, exist_ok=True)
 
-    if has_7z:
-        # 使用 7z 解压分卷文件
-        print(f"使用 {zip_cmd} 解压...")
-        cmd = [zip_cmd, 'x', str(base_path), f'-o{extract_to}', '-y']
-        process = subprocess.Popen(
-            cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            universal_newlines=True
-        )
+    # 使用 7z 解压分卷文件
+    print(f"\n使用 {zip_cmd} 解压...")
+    cmd = [zip_cmd, 'x', str(base_path), f'-o{extract_to}', '-y']
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        universal_newlines=True
+    )
 
-        for line in process.stdout:
-            if line.strip():
-                print(f"  {line.strip()}")
+    for line in process.stdout:
+        if line.strip():
+            print(f"  {line.strip()}")
 
-        process.wait()
+    process.wait()
 
-        if process.returncode == 0:
-            print(f"✓ 解压完成: {base_path}")
-        else:
-            print(f"✗ 解压失败: {process.stderr.read()}")
-            raise Exception("7-Zip 解压失败")
+    if process.returncode == 0:
+        print(f"✓ 解压完成: {base_path}")
     else:
-        # 尝试使用 Python zipfile（可能不支持分卷）
-        print("⚠ 警告: Python zipfile 可能不支持分卷压缩")
-        print("建议安装 7-Zip: https://www.7-zip.org/download.html")
-
-        try:
-            with zipfile.ZipFile(base_path, 'r') as zip_ref:
-                members = zip_ref.namelist()
-                with tqdm(total=len(members), desc="解压进度") as pbar:
-                    for member in members:
-                        zip_ref.extract(member, extract_to)
-                        pbar.update(1)
-            print(f"✓ 解压完成: {base_path}")
-        except Exception as e:
-            print(f"✗ Python zipfile 无法解压分卷文件: {e}")
-            print("\n请手动安装 7-Zip 并重试:")
-            print("  Windows: https://www.7-zip.org/download.html")
-            print("  Linux: sudo apt-get install p7zip-full")
-            print("  Mac: brew install p7zip")
-            raise
+        stderr_output = process.stderr.read()
+        print(f"✗ 解压失败: {stderr_output}")
+        raise Exception("7-Zip 解压失败")
 
 
 def main():

@@ -9,13 +9,58 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 from tqdm import tqdm
 import argparse
+import logging
+from datetime import datetime
 
 from config import Config
 from dataset import get_dataloaders
 from model import ConditionalLSTMVAE, vae_loss
 
 
-def train_epoch(model, dataloader, optimizer, config, epoch, writer):
+def setup_logger(timestamp):
+    """
+    设置日志记录器，同时输出到控制台和文件
+
+    Args:
+        timestamp: 训练开始时间戳
+
+    Returns:
+        logger: 配置好的日志记录器
+    """
+    # 创建logs目录
+    log_dir = "logs"
+    os.makedirs(log_dir, exist_ok=True)
+
+    # 创建logger
+    logger = logging.getLogger('TrainingLogger')
+    logger.setLevel(logging.INFO)
+
+    # 清除已有的handlers（避免重复）
+    logger.handlers.clear()
+
+    # 文件handler - 保存所有日志
+    log_file = os.path.join(log_dir, f'training_{timestamp}.log')
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler.setLevel(logging.INFO)
+
+    # 控制台handler
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+
+    # 设置格式
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s',
+                                 datefmt='%Y-%m-%d %H:%M:%S')
+    file_handler.setFormatter(formatter)
+    console_handler.setFormatter(formatter)
+
+    # 添加handlers
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+
+    return logger
+
+
+def train_epoch(model, dataloader, optimizer, config, epoch, writer, logger=None):
     """Train for one epoch"""
     model.train()
     total_loss = 0
@@ -75,7 +120,7 @@ def train_epoch(model, dataloader, optimizer, config, epoch, writer):
     return avg_loss, avg_recon_loss, avg_kl_loss
 
 
-def validate(model, dataloader, config, epoch, writer):
+def validate(model, dataloader, config, epoch, writer, logger=None):
     """Validate the model"""
     model.eval()
     total_loss = 0
@@ -153,27 +198,48 @@ def main(args):
     os.makedirs('runs', exist_ok=True)
 
     # Generate timestamp for this training run
-    from datetime import datetime
     timestamp = datetime.now().strftime("%y%m%d%H%M")
+
+    # Setup logger
+    logger = setup_logger(timestamp)
+    logger.info("="*70)
+    logger.info(f"Training started at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info(f"Timestamp: {timestamp}")
+    logger.info("="*70)
 
     # Initialize tensorboard
     writer = SummaryWriter('runs/clstm_vae')
 
     # Load data
-    print("Loading data...")
+    logger.info("Loading data...")
     train_loader, val_loader, num_users = get_dataloaders(Config, demo=args.demo)
 
-    print(f"Number of users: {num_users}")
-    print(f"Training batches: {len(train_loader)}")
-    print(f"Validation batches: {len(val_loader)}")
+    logger.info(f"Number of users: {num_users}")
+    logger.info(f"Training batches: {len(train_loader)}")
+    logger.info(f"Validation batches: {len(val_loader)}")
 
     # Create model
-    print("\nInitializing model...")
+    logger.info("\nInitializing model...")
     model = ConditionalLSTMVAE(Config, num_users).to(Config.DEVICE)
 
     # Count parameters
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"Number of trainable parameters: {num_params:,}")
+    logger.info(f"Number of trainable parameters: {num_params:,}")
+
+    # Log model configuration
+    logger.info(f"\nModel Configuration:")
+    logger.info(f"  HIDDEN_DIM: {Config.HIDDEN_DIM}")
+    logger.info(f"  LATENT_DIM: {Config.LATENT_DIM}")
+    logger.info(f"  NUM_LAYERS: {Config.NUM_LAYERS}")
+    logger.info(f"  DROPOUT: {Config.DROPOUT}")
+    logger.info(f"\nTraining Configuration:")
+    logger.info(f"  BATCH_SIZE: {Config.BATCH_SIZE}")
+    logger.info(f"  LEARNING_RATE: {Config.LEARNING_RATE}")
+    logger.info(f"  NUM_EPOCHS: {Config.NUM_EPOCHS}")
+    logger.info(f"  KL_WEIGHT: {Config.KL_WEIGHT}")
+    logger.info(f"  KL_ANNEAL_EPOCHS: {Config.KL_ANNEAL_EPOCHS}")
+    logger.info(f"  EARLY_STOPPING: {Config.EARLY_STOPPING}")
+    logger.info(f"  EARLY_STOPPING_PATIENCE: {Config.EARLY_STOPPING_PATIENCE}")
 
     # Optimizer
     optimizer = optim.Adam(model.parameters(), lr=Config.LEARNING_RATE)
@@ -186,35 +252,42 @@ def main(args):
     # Resume from checkpoint if specified
     start_epoch = 0
     if args.resume:
+        logger.info(f"Resuming from checkpoint: {args.resume}")
         start_epoch, _ = load_checkpoint(model, optimizer, args.resume, Config)
         start_epoch += 1
 
     # Training loop
-    print("\nStarting training...")
+    logger.info("\n" + "="*70)
+    logger.info("Starting training...")
+    logger.info("="*70)
     best_val_loss = float('inf')
     epochs_without_improvement = 0
 
     for epoch in range(start_epoch, Config.NUM_EPOCHS):
-        print(f"\n{'='*50}")
-        print(f"Epoch {epoch}/{Config.NUM_EPOCHS-1}")
-        print(f"{'='*50}")
+        logger.info(f"\n{'='*70}")
+        logger.info(f"Epoch {epoch}/{Config.NUM_EPOCHS-1}")
+        logger.info(f"{'='*70}")
 
         # Train
         train_loss, train_recon, train_kl = train_epoch(
-            model, train_loader, optimizer, Config, epoch, writer
+            model, train_loader, optimizer, Config, epoch, writer, logger
         )
 
-        print(f"\nTrain Loss: {train_loss:.4f} (Recon: {train_recon:.4f}, KL: {train_kl:.4f})")
+        logger.info(f"Train Loss: {train_loss:.4f} (Recon: {train_recon:.4f}, KL: {train_kl:.4f})")
 
         # Validate
         val_loss, val_recon, val_kl = validate(
-            model, val_loader, Config, epoch, writer
+            model, val_loader, Config, epoch, writer, logger
         )
 
-        print(f"Val Loss: {val_loss:.4f} (Recon: {val_recon:.4f}, KL: {val_kl:.4f})")
+        logger.info(f"Val Loss: {val_loss:.4f} (Recon: {val_recon:.4f}, KL: {val_kl:.4f})")
 
         # Learning rate scheduling
+        current_lr = optimizer.param_groups[0]['lr']
         scheduler.step(val_loss)
+        new_lr = optimizer.param_groups[0]['lr']
+        if new_lr != current_lr:
+            logger.info(f"Learning rate changed: {current_lr:.6f} -> {new_lr:.6f}")
 
         # Save checkpoint
         if (epoch + 1) % Config.SAVE_EVERY == 0:
@@ -226,6 +299,7 @@ def main(args):
 
         # Save best model and check for improvement
         if val_loss < best_val_loss - Config.EARLY_STOPPING_MIN_DELTA:
+            improvement = best_val_loss - val_loss
             best_val_loss = val_loss
             epochs_without_improvement = 0
             save_checkpoint(
@@ -233,17 +307,17 @@ def main(args):
                 f'best_model_{timestamp}.pt',
                 num_users=num_users
             )
-            print(f"✓ New best model saved! Val loss: {val_loss:.4f}")
+            logger.info(f"✓ New best model saved! Val loss: {val_loss:.4f} (improved by {improvement:.4f})")
         else:
             epochs_without_improvement += 1
-            print(f"No improvement for {epochs_without_improvement} epoch(s) (best: {best_val_loss:.4f})")
+            logger.info(f"No improvement for {epochs_without_improvement} epoch(s) (best: {best_val_loss:.4f})")
 
         # Early stopping
         if Config.EARLY_STOPPING and epochs_without_improvement >= Config.EARLY_STOPPING_PATIENCE:
-            print(f"\n{'='*50}")
-            print(f"Early stopping triggered after {epochs_without_improvement} epochs without improvement")
-            print(f"Best validation loss: {best_val_loss:.4f}")
-            print(f"{'='*50}")
+            logger.info(f"\n{'='*70}")
+            logger.info(f"Early stopping triggered after {epochs_without_improvement} epochs without improvement")
+            logger.info(f"Best validation loss: {best_val_loss:.4f}")
+            logger.info(f"{'='*70}")
             break
 
     # Save final model
@@ -254,7 +328,11 @@ def main(args):
     )
 
     writer.close()
-    print("\nTraining completed!")
+    logger.info("\n" + "="*70)
+    logger.info("Training completed!")
+    logger.info(f"Best validation loss: {best_val_loss:.4f}")
+    logger.info(f"Training ended at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    logger.info("="*70)
 
 
 if __name__ == "__main__":
