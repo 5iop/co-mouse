@@ -92,6 +92,10 @@ def _compute_features_static(df):
     delta_x[1:] = x[1:] - x[:-1]
     delta_y[1:] = y[1:] - y[:-1]
 
+    # Clip delta_t to reasonable range (0-5 seconds)
+    # This prevents outliers from dominating the loss
+    delta_t = np.clip(delta_t, 0, 5.0)
+
     distance = np.sqrt(delta_x**2 + delta_y**2)
     speed = distance / (delta_t + 1e-6)
     speed = np.clip(speed, 0, 10)  # Clip to reasonable range
@@ -394,6 +398,10 @@ class MouseTrajectoryDataset(Dataset):
         delta_t[1:] = t[1:] - t[:-1]
         delta_x[1:] = x[1:] - x[:-1]
         delta_y[1:] = y[1:] - y[:-1]
+
+        # Clip delta_t to reasonable range (0-5 seconds)
+        # This prevents outliers from dominating the loss
+        delta_t = np.clip(delta_t, 0, 5.0)
 
         # Compute speed - vectorized
         distance = np.sqrt(delta_x**2 + delta_y**2)

@@ -220,7 +220,7 @@ class ConditionalLSTMVAE(nn.Module):
 
 def vae_loss(x_recon, x, mu, logvar, kl_weight=1.0):
     """
-    VAE loss function
+    VAE loss function with per-feature weighting
 
     Args:
         x_recon: Reconstructed sequence
@@ -234,8 +234,22 @@ def vae_loss(x_recon, x, mu, logvar, kl_weight=1.0):
         recon_loss: Reconstruction loss
         kl_loss: KL divergence loss
     """
-    # Reconstruction loss (MSE)
-    recon_loss = F.mse_loss(x_recon, x, reduction='mean')
+    # Per-feature weights to balance reconstruction loss
+    # Feature order: [delta_t, delta_x, delta_y, speed, acceleration, button_encoded, state_encoded]
+    feature_weights = torch.tensor([
+        0.01,  # delta_t: reduce weight (variance too high)
+        100.0, # delta_x: increase weight (critical for trajectory)
+        100.0, # delta_y: increase weight (critical for trajectory)
+        1.0,   # speed
+        1.0,   # acceleration
+        1.0,   # button
+        1.0    # state
+    ], device=x_recon.device)
+
+    # Weighted MSE reconstruction loss
+    squared_error = (x_recon - x) ** 2  # (batch, seq_len, features)
+    weighted_error = squared_error * feature_weights.view(1, 1, -1)
+    recon_loss = weighted_error.mean()
 
     # KL divergence
     kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
