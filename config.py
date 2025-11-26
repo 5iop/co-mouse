@@ -41,8 +41,8 @@ class Config:
     BATCH_SIZE = 1280  # Increased for better GPU utilization
     LEARNING_RATE = 1e-3
     NUM_EPOCHS = 100
-    KL_WEIGHT = 0.2  # Increased from 0.05 to prevent posterior collapse (KL was dropping to 0)
-    KL_ANNEAL_EPOCHS = 15  # Faster annealing (was 30) to give KL signal earlier
+    KL_WEIGHT = 1.0  # Start with full KL weight to prevent posterior collapse
+    KL_ANNEAL_EPOCHS = 0  # No annealing - keep constant KL weight for stability
     GRADIENT_CLIP = 1.0
 
     # Generation parameters
