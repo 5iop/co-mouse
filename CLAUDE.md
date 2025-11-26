@@ -93,7 +93,11 @@ python generate.py --checkpoint checkpoints/best_model.pt --num_samples 5 --temp
 - **Encoder**: LSTM processes input + conditions → latent distribution (μ, log σ²)
 - **Reparameterization trick**: `z = μ + σ * ε` for backpropagation through sampling
 - **Decoder**: Latent z + conditions → LSTM → reconstructed trajectory
-- **Loss**: `Total = MSE Reconstruction + β * KL Divergence`
+- **Loss with Per-Feature Weighting**: `Total = Weighted MSE Reconstruction + β * KL Divergence`
+  - Feature weights: `[delta_t: 0.01, delta_x: 100.0, delta_y: 100.0, others: 1.0]`
+  - **Critical**: delta_x/delta_y have 100× weight to ensure model learns trajectory endpoints
+  - delta_t has 0.01× weight to prevent outliers from dominating loss
+  - Without weighting, delta_t variance (7.93 before clipping) would dominate 85%+ of loss
 - Condition encoding via embeddings for categorical variables (user, time, action) + normalized positions
 - **Key Methods**:
   - `encode_condition()`: Combines all condition embeddings
@@ -101,6 +105,7 @@ python generate.py --checkpoint checkpoints/best_model.pt --num_samples 5 --temp
   - `reparameterize()`: Sampling with gradient flow
   - `decode()`: Latent → sequence
   - `generate()`: Sample from prior + decode
+  - `vae_loss()`: Computes weighted reconstruction loss + KL divergence
 
 **4. Training (`train.py`)**
 - `train_epoch()`: Training loop with KL annealing
@@ -138,7 +143,10 @@ python generate.py --checkpoint checkpoints/best_model.pt --num_samples 5 --temp
   1. `check_feature_distribution()`: Shows min/max/mean/std/variance for all 7 features
   2. `check_model_output()`: Tests untrained model on sample batch, shows latent distribution and per-feature reconstruction errors
   3. `check_data_sanity()`: Validates dataset size, user count, condition distributions
-- Useful for identifying feature scale issues (e.g., `delta_t` variance = 6.91 vs others < 0.1)
+- **Important**: Converts tensors to CPU with `.cpu().numpy()` and casts to int64 for `np.bincount()`
+- Useful for identifying feature scale issues:
+  - Before fixes: `delta_t` variance = 7.93, max = 512s (outliers dominating)
+  - After fixes: `delta_t` variance = 0.01, max = 5s (clipped)
 
 ### Data Flow
 
@@ -164,7 +172,12 @@ boun-mouse-dynamics-dataset/users/
 ### Feature Engineering
 All operations are vectorized using NumPy for performance:
 - `delta_t[1:] = t[1:] - t[:-1]` (time differences)
+- **`delta_t = np.clip(delta_t, 0, 5.0)`** - Clips outliers to [0, 5] seconds
+  - Prevents extreme values (originally up to 512s) from dominating loss
+  - Applied in both `_compute_features_static()` and `_compute_features()`
+  - Reduces variance from 7.93 to 0.01 without dropping data
 - `delta_x[1:] = x[1:] - x[:-1]` (spatial displacements, normalized)
+- `delta_y[1:] = y[1:] - y[:-1]`
 - `speed = distance / (delta_t + 1e-6)`
 - `acceleration[2:] = (speed[2:] - speed[1:-1]) / (delta_t[2:] + 1e-6)`
 - Button encoding: `{'None': 0, 'Left': 1, 'Right': 2, 'Middle': 3}`
@@ -266,10 +279,13 @@ USE_CACHE = True  # Speed up subsequent loads
    - KL divergence too high/low initially
    - Uneven condition distributions (some users/actions too rare)
 
-3. **Common fixes**:
-   - If `delta_t` dominates: Normalize or clip it in `dataset.py`
-   - If KL is huge: Lower `KL_WEIGHT` or extend `KL_ANNEAL_EPOCHS`
-   - If reconstruction error is uneven: Use weighted loss per feature
+3. **Fixed issues** (as of latest commits):
+   - **delta_t outliers**: Now clipped to [0, 5] seconds in `dataset.py`
+     - Before: max=512s, variance=7.93
+     - After: max=5s, variance=0.01
+   - **Feature weight imbalance**: Per-feature weights in `model.py:vae_loss()`
+     - delta_x/delta_y now have 100× weight vs delta_t's 0.01× weight
+   - **Tensor type errors**: `diagnose.py` now uses `.cpu().numpy().astype(np.int64)`
 
 ## Common Issues
 
@@ -290,6 +306,22 @@ DataLoader `num_workers` is set to 0 for Windows compatibility in `dataset.py:52
 
 ### Empty/Corrupted Files
 The dataset loader silently skips empty or corrupted files and reports statistics at the end.
+
+### Loss Values After Feature Weighting Fix
+**After applying per-feature weights (delta_x/delta_y ×100), loss values will be much higher but this is correct:**
+- **Before fix**: Val loss ~0.3 (low because model ignored delta_x/delta_y)
+  - delta_t MSE: 6.53 (85% of total loss)
+  - delta_x/delta_y MSE: 0.0008 (ignored by optimizer)
+  - Generated trajectories missed targets by 500+ pixels
+- **After fix**: Val loss ~10-30 (higher but learning the right features)
+  - delta_t MSE: 0.01-0.05 (controlled)
+  - delta_x/delta_y MSE: 0.1-0.3 (now being optimized!)
+  - Generated trajectories should reach targets within <100 pixels
+
+**Do not be alarmed by higher loss values** - the model is now correctly prioritizing trajectory endpoints over time prediction. Evaluate model quality by:
+1. Running `diagnose.py` to check per-feature MSE balance
+2. Generating trajectories and measuring endpoint error
+3. Visual inspection of trajectory smoothness and realism
 
 ## Model Checkpoints
 
