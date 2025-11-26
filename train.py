@@ -67,8 +67,11 @@ def train_epoch(model, dataloader, optimizer, config, epoch, writer, logger=None
     total_recon_loss = 0
     total_kl_loss = 0
 
-    # KL annealing
-    kl_weight = min(1.0, config.KL_WEIGHT * (epoch / config.KL_ANNEAL_EPOCHS))
+    # KL annealing (if KL_ANNEAL_EPOCHS=0, use constant weight)
+    if config.KL_ANNEAL_EPOCHS > 0:
+        kl_weight = min(1.0, config.KL_WEIGHT * (epoch / config.KL_ANNEAL_EPOCHS))
+    else:
+        kl_weight = config.KL_WEIGHT
 
     pbar = tqdm(dataloader, desc=f"Epoch {epoch}")
     for batch_idx, (sequences, conditions) in enumerate(pbar):
