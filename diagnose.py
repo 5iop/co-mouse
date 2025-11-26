@@ -115,15 +115,15 @@ def check_data_sanity(train_loader, val_loader, num_users):
     all_action_types = []
 
     for i, (_, conditions) in enumerate(train_loader):
-        all_user_ids.append(conditions['user_id'].numpy())
-        all_time_periods.append(conditions['time_period'].numpy())
-        all_action_types.append(conditions['action_type'].numpy())
+        all_user_ids.append(conditions['user_id'].cpu().numpy())
+        all_time_periods.append(conditions['time_period'].cpu().numpy())
+        all_action_types.append(conditions['action_type'].cpu().numpy())
         if i >= 100:
             break
 
-    all_user_ids = np.concatenate(all_user_ids)
-    all_time_periods = np.concatenate(all_time_periods)
-    all_action_types = np.concatenate(all_action_types)
+    all_user_ids = np.concatenate(all_user_ids).astype(np.int64)
+    all_time_periods = np.concatenate(all_time_periods).astype(np.int64)
+    all_action_types = np.concatenate(all_action_types).astype(np.int64)
 
     print(f"\n条件分布:")
     print(f"  User IDs: min={all_user_ids.min()}, max={all_user_ids.max()}, unique={len(np.unique(all_user_ids))}")
