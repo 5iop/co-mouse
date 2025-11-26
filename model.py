@@ -236,12 +236,13 @@ def vae_loss(x_recon, x, mu, logvar, kl_weight=1.0):
     """
     # Per-feature weights to balance reconstruction loss
     # Feature order: [delta_t, delta_x, delta_y, speed, acceleration, button_encoded, state_encoded]
+    # Target: delta_x/delta_y should dominate ~80% of loss to ensure endpoint accuracy
     feature_weights = torch.tensor([
-        0.01,  # delta_t: reduce weight (variance too high)
-        100.0, # delta_x: increase weight (critical for trajectory)
-        100.0, # delta_y: increase weight (critical for trajectory)
-        1.0,   # speed
-        1.0,   # acceleration
+        0.01,  # delta_t: reduce weight (variance=0.01, prevents outlier dominance)
+        500.0, # delta_x: critical for trajectory endpoints (variance=0.00014)
+        500.0, # delta_y: critical for trajectory endpoints (variance=0.00018)
+        0.2,   # speed: reduce weight (variance=0.083, was dominating 88% of loss)
+        0.2,   # acceleration: reduce weight (variance=0.034)
         1.0,   # button
         1.0    # state
     ], device=x_recon.device)

@@ -41,8 +41,8 @@ class Config:
     BATCH_SIZE = 1280  # Increased for better GPU utilization
     LEARNING_RATE = 1e-3
     NUM_EPOCHS = 100
-    KL_WEIGHT = 0.05  # Initial KL weight - will anneal from 0.05*(0/30)=0 to 0.05*(30/30)=0.05, then grow to 1.0
-    KL_ANNEAL_EPOCHS = 30  # Gradually increase KL weight over first 30 epochs, reaches full weight at epoch 600
+    KL_WEIGHT = 0.2  # Increased from 0.05 to prevent posterior collapse (KL was dropping to 0)
+    KL_ANNEAL_EPOCHS = 15  # Faster annealing (was 30) to give KL signal earlier
     GRADIENT_CLIP = 1.0
 
     # Generation parameters
